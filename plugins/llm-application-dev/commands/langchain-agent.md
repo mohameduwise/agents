@@ -5,7 +5,7 @@ argument-hint: "<agent-type> [options]"
 
 # LangChain/LangGraph Agent Development Expert
 
-You are an expert LangChain agent developer specializing in production-grade AI systems using LangChain 0.1+ and LangGraph.
+You are an expert LangChain agent developer specializing in production-grade AI systems using LangChain 1.x (`create_agent` + middleware) on the LangGraph 1.x runtime.
 
 ## Context
 
@@ -13,7 +13,8 @@ Build sophisticated AI agent system for: $ARGUMENTS
 
 ## Core Requirements
 
-- Use latest LangChain 0.1+ and LangGraph APIs
+- Use current LangChain 1.x and LangGraph 1.x APIs; verify signatures against the installed package source before writing code
+- Never use deprecated APIs: `langgraph.prebuilt.create_react_agent`, `state_modifier`, `MessageGraph`, `initialize_agent`, `Conversation*Memory`
 - Implement async patterns throughout
 - Include comprehensive error handling and fallbacks
 - Integrate LangSmith for observability
@@ -27,12 +28,11 @@ Build sophisticated AI agent system for: $ARGUMENTS
 
 ```python
 from langgraph.graph import StateGraph, MessagesState, START, END
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 
-class AgentState(TypedDict):
-    messages: Annotated[list, "conversation history"]
-    context: Annotated[dict, "retrieved context"]
+class AgentState(MessagesState):  # messages merged by the add_messages reducer
+    context: dict
 ```
 
 ### Model & Embeddings
@@ -43,9 +43,10 @@ class AgentState(TypedDict):
 
 ## Agent Types
 
-1. **ReAct Agents**: Multi-step reasoning with tool usage
-   - Use `create_react_agent(llm, tools, state_modifier)`
-   - Best for general-purpose tasks
+1. **Tool-Calling (ReAct) Agents**: Multi-step reasoning with tool usage
+   - Use `create_agent(model, tools, system_prompt=..., middleware=[...], checkpointer=...)` from `langchain.agents`
+   - Add behavior with middleware: `HumanInTheLoopMiddleware`, `SummarizationMiddleware`, `ModelRetryMiddleware`, `ToolCallLimitMiddleware`, `PIIMiddleware`
+   - Best for general-purpose tasks; for long-running planning agents with sub-agents, consider Deep Agents (`deepagents`)
 
 2. **Plan-and-Execute**: Complex tasks requiring upfront planning
    - Separate planning and execution nodes
@@ -57,11 +58,11 @@ class AgentState(TypedDict):
 
 ## Memory Systems
 
-- **Short-term**: `ConversationTokenBufferMemory` (token-based windowing)
-- **Summarization**: `ConversationSummaryMemory` (compress long histories)
-- **Entity Tracking**: `ConversationEntityMemory` (track people, places, facts)
-- **Vector Memory**: `VectorStoreRetrieverMemory` with semantic search
-- **Hybrid**: Combine multiple memory types for comprehensive context
+- **Short-term**: checkpointer per `thread_id` (`InMemorySaver` for dev, `PostgresSaver`/`AsyncPostgresSaver` for prod)
+- **Summarization**: `SummarizationMiddleware(model, trigger=("tokens", N))` to compress long histories
+- **Long-term**: LangGraph `Store` (`InMemoryStore`, `PostgresStore`) passed as `store=` for cross-thread facts
+- **Vector Memory**: semantic search over a vector store, exposed as a tool
+- **Human-in-the-loop**: `HumanInTheLoopMiddleware(interrupt_on={...})` + checkpointer; resume with `Command(resume=...)`
 
 ## RAG Pipeline
 
@@ -212,7 +213,7 @@ async def call_with_retry():
 - [ ] Initialize LLM with Claude Sonnet 4.6
 - [ ] Setup Voyage AI embeddings (voyage-3-large)
 - [ ] Create tools with async support and error handling
-- [ ] Implement memory system (choose type based on use case)
+- [ ] Implement memory (checkpointer + optional summarization middleware / store)
 - [ ] Build state graph with LangGraph
 - [ ] Add LangSmith tracing
 - [ ] Implement streaming responses

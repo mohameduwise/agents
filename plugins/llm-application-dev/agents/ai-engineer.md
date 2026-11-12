@@ -36,12 +36,14 @@ Expert AI engineer specializing in LLM application development, RAG systems, and
 
 ### Agent Frameworks & Orchestration
 
-- LangGraph (LangChain 1.x) for complex agent workflows with StateGraph and durable execution
+- LangGraph 1.x as the agent runtime: StateGraph, durable checkpointing, streaming, `interrupt()`/`Command` human-in-the-loop
+- LangChain 1.x `create_agent` with middleware (human approval, summarization, retries, PII) — not the deprecated `langgraph.prebuilt.create_react_agent`
+- Deep Agents (`deepagents`) harness for long-running agents with planning and sub-agents
 - LlamaIndex for data-centric AI applications and advanced retrieval
 - CrewAI for multi-agent collaboration and specialized agent roles
 - AutoGen for conversational multi-agent systems
 - Claude Agent SDK for building production Anthropic agents
-- Agent memory systems: checkpointers, short-term, long-term, and vector-based memory
+- Agent memory systems: checkpointers (per thread), LangGraph Store (long-term), summarization middleware, vector-based recall
 - Tool integration: web search, code execution, API calls, database queries
 - Agent evaluation and monitoring with LangSmith
 

@@ -152,6 +152,13 @@ A read-only clone of [langchain-ai/langgraph](https://github.com/langchain-ai/la
 - `MessageGraph` is deprecated (removal in 2.0) → `StateGraph` with a `messages` key / `MessagesState`.
 - `langgraph.prebuilt` and supervisor/swarm packages are **maintenance-only**. LangGraph positions itself as the low-level runtime; new agent-building examples should use **Deep Agents** (`langchain-ai/deepagents`).
 - Current primitives: `StateGraph`, `START`/`END`, `add_messages`, `Command`, `Send`, `interrupt()` (`langgraph.types`); functional API `@entrypoint` / `@task` (`langgraph.func`).
+- `MemorySaver` is a back-compat alias → use `InMemorySaver`. `PostgresSaver.from_conn_string(...)` is a **context manager** (`with ... as cp: cp.setup()`).
+- **langchain 1.5.0** (`langchain-ai/langchain`, `libs/langchain_v1`): `create_agent(model, tools=None, *, system_prompt, middleware, response_format, state_schema, context_schema, checkpointer, store, interrupt_before, interrupt_after, debug, name, cache, transformers)`. Middleware in `langchain.agents.middleware`: `HumanInTheLoopMiddleware(interrupt_on={...})`, `SummarizationMiddleware(model, trigger=("tokens"|"messages"|"fraction", n))`, `ModelRetryMiddleware`, `ToolCallLimitMiddleware`, `PIIMiddleware`, etc. HITL resume: `Command(resume={"decisions": [{"type": "approve"|"edit"|"reject"|"respond"}]})`. Legacy `Conversation*Memory` lives only in `langchain-classic`.
+- To re-verify langchain: `git clone --depth 1 --filter=blob:none --sparse https://github.com/langchain-ai/langchain ../langchain-ai/langchain && git -C ../langchain-ai/langchain sparse-checkout set libs/langchain_v1`.
+
+### Plugin content aligned with these facts
+
+`plugins/llm-application-dev` v2.1.0: `skills/langchain-architecture`, `commands/langchain-agent.md`, `agents/ai-engineer.md`. When the facts above change, update those files and bump the version in `plugin.json` and `marketplace.json`.
 
 ### Where to look in the clone
 
