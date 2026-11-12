@@ -1,0 +1,18 @@
+{
+  "folders": [
+    { "name": "agents", "path": "." },
+    { "name": "langgraph (reference, read-only)", "path": "../langchain-ai/langgraph" }
+  ],
+  "settings": {
+    "files.readonlyInclude": {
+      "../langchain-ai/langgraph/**": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.venv": true
+    },
+    "files.watcherExclude": {
+      "../langchain-ai/langgraph/**": true
+    }
+  }
+}

@@ -139,6 +139,41 @@ OVER_CONSTRAINED (>15 MUST/ALWAYS/NEVER), EMPTY_DESCRIPTION (<20 chars), MISSING
 - Dependencies: pydantic, typer, rich, pyyaml
 - Optional: claude-agent-sdk (LLM layers), anthropic (API alternative)
 
+## LangGraph Reference
+
+A read-only clone of [langchain-ai/langgraph](https://github.com/langchain-ai/langgraph) lives next to this repo at `../langchain-ai/langgraph` (also opened by `agents.code-workspace` in VS Code).
+
+- **Before LangGraph work** (editing `plugins/llm-application-dev/` or writing LangGraph code), run `tools/sync-langgraph.sh` to clone or update it, then verify APIs against the source, not memory.
+- **Never edit** the reference clone; it is reset on each sync.
+
+### Verified facts (langgraph 1.2.21, synced 2026-11-12 — update this block when a sync shows a new version)
+
+- `langgraph.prebuilt.create_react_agent` is **deprecated** → use `from langchain.agents import create_agent`.
+- `MessageGraph` is deprecated (removal in 2.0) → `StateGraph` with a `messages` key / `MessagesState`.
+- `langgraph.prebuilt` and supervisor/swarm packages are **maintenance-only**. LangGraph positions itself as the low-level runtime; new agent-building examples should use **Deep Agents** (`langchain-ai/deepagents`).
+- Current primitives: `StateGraph`, `START`/`END`, `add_messages`, `Command`, `Send`, `interrupt()` (`langgraph.types`); functional API `@entrypoint` / `@task` (`langgraph.func`).
+- `MemorySaver` is a back-compat alias → use `InMemorySaver`. `PostgresSaver.from_conn_string(...)` is a **context manager** (`with ... as cp: cp.setup()`).
+- **langchain 1.5.0** (`langchain-ai/langchain`, `libs/langchain_v1`): `create_agent(model, tools=None, *, system_prompt, middleware, response_format, state_schema, context_schema, checkpointer, store, interrupt_before, interrupt_after, debug, name, cache, transformers)`. Middleware in `langchain.agents.middleware`: `HumanInTheLoopMiddleware(interrupt_on={...})`, `SummarizationMiddleware(model, trigger=("tokens"|"messages"|"fraction", n))`, `ModelRetryMiddleware`, `ToolCallLimitMiddleware`, `PIIMiddleware`, etc. HITL resume: `Command(resume={"decisions": [{"type": "approve"|"edit"|"reject"|"respond"}]})`. Legacy `Conversation*Memory` lives only in `langchain-classic`.
+- To re-verify langchain: `git clone --depth 1 --filter=blob:none --sparse https://github.com/langchain-ai/langchain ../langchain-ai/langchain && git -C ../langchain-ai/langchain sparse-checkout set libs/langchain_v1`.
+
+### Plugin content aligned with these facts
+
+`plugins/llm-application-dev` v2.1.0: `skills/langchain-architecture`, `commands/langchain-agent.md`, `agents/ai-engineer.md`. When the facts above change, update those files and bump the version in `plugin.json` and `marketplace.json`.
+
+### Where to look in the clone
+
+| Need | Path |
+| --- | --- |
+| Repo conventions & direction | `AGENTS.md` |
+| Graph API | `libs/langgraph/langgraph/graph/state.py` |
+| `Command`, `Send`, `interrupt` | `libs/langgraph/langgraph/types.py` |
+| Functional API | `libs/langgraph/langgraph/func/__init__.py` |
+| Prebuilt (`ToolNode`, deprecations) | `libs/prebuilt/langgraph/prebuilt/` |
+| Checkpointers | `libs/checkpoint*/` |
+| Docs index | `docs/llms.txt` |
+| Examples | `examples/` |
+| Package versions | `libs/*/pyproject.toml` |
+
 ## Development
 
 ### Python Tooling

@@ -20,36 +20,51 @@ Master modern LangChain 1.x and LangGraph for building sophisticated LLM applica
 ## Package Structure (LangChain 1.x)
 
 ```
-langchain (1.2.x)         # High-level orchestration
-langchain-core (1.2.x)    # Core abstractions (messages, prompts, tools)
+langchain (1.5.x)         # create_agent + middleware (built on LangGraph)
+langchain-core            # Core abstractions (messages, prompts, tools)
+langgraph (1.2.x)         # Runtime: graphs, checkpointing, streaming, interrupts
+langgraph-checkpoint-*    # Checkpointers (sqlite, postgres)
+langchain-classic         # Legacy chains/memory (ConversationBufferMemory, etc.)
 langchain-community       # Third-party integrations
-langgraph                 # Agent orchestration and state management
-langchain-openai          # OpenAI integrations
 langchain-anthropic       # Anthropic/Claude integrations
 langchain-voyageai        # Voyage AI embeddings
 langchain-pinecone        # Pinecone vector store
 ```
 
+> Versions verified against the langgraph and langchain repos in Nov 2026. Before relying on
+> an API, check the installed package source (`python -c "import langgraph, inspect; ..."`)
+> or a local clone; these APIs move quickly.
+
 ## Core Concepts
 
-### 1. LangGraph Agents
+### 1. Layers: Runtime vs. Agent Harness
 
-LangGraph is the standard for building agents in 2026. It provides:
+- **LangGraph** is the low-level **runtime**: `StateGraph`, durable checkpointing,
+  streaming, `interrupt()`/`Command` for human-in-the-loop, `Send` for fan-out.
+  Use it directly for custom workflows and graphs.
+- **`langchain.agents.create_agent`** is the standard tool-calling agent, compiled to a
+  LangGraph graph and customized with **middleware** (human approval, summarization,
+  retries, PII redaction, call limits).
+- **Deep Agents** (`deepagents`) is the recommended harness for long-running agents
+  with planning, sub-agents and a filesystem.
 
-**Key Features:**
+**Deprecated (do not use in new code):**
 
-- **StateGraph**: Explicit state management with typed state
-- **Durable Execution**: Agents persist through failures
-- **Human-in-the-Loop**: Inspect and modify state at any point
-- **Memory**: Short-term and long-term memory across sessions
-- **Checkpointing**: Save and resume agent state
+| Deprecated                                | Use instead                                         |
+| ----------------------------------------- | --------------------------------------------------- |
+| `langgraph.prebuilt.create_react_agent`   | `langchain.agents.create_agent`                     |
+| `create_react_agent(..., state_modifier=/prompt=)` | `create_agent(..., system_prompt=...)`     |
+| `langgraph.prebuilt.AgentState`           | `langchain.agents.AgentState`                       |
+| `MessageGraph`                            | `StateGraph(MessagesState)` (removed in 2.0)        |
+| `MemorySaver`                             | `InMemorySaver` (old name is an alias)              |
+| `langgraph.prebuilt` for new features     | maintenance-only; extend via middleware             |
 
 **Agent Patterns:**
 
-- **ReAct**: Reasoning + Acting with `create_react_agent`
-- **Plan-and-Execute**: Separate planning and execution nodes
+- **ReAct / tool calling**: `create_agent(model, tools)`
+- **Plan-and-Execute**: Separate planning and execution nodes in a `StateGraph`
 - **Multi-Agent**: Supervisor routing between specialized agents
-- **Tool-Calling**: Structured tool invocation with Pydantic schemas
+- **Human-in-the-Loop**: `HumanInTheLoopMiddleware` or `interrupt()` inside a node
 
 ### 2. State Management
 
@@ -76,11 +91,13 @@ class CustomState(TypedDict):
 
 Modern memory implementations:
 
-- **ConversationBufferMemory**: Stores all messages (short conversations)
-- **ConversationSummaryMemory**: Summarizes older messages (long conversations)
-- **ConversationTokenBufferMemory**: Token-based windowing
-- **VectorStoreRetrieverMemory**: Semantic similarity retrieval
-- **LangGraph Checkpointers**: Persistent state across sessions
+- **Short-term (per thread)**: LangGraph checkpointers (`InMemorySaver`, `SqliteSaver`, `PostgresSaver`) keyed by `thread_id`
+- **Long history**: `SummarizationMiddleware` on `create_agent` compresses older messages
+- **Long-term (across threads)**: LangGraph `Store` (`InMemoryStore`, `PostgresStore`) passed as `store=`
+- **Semantic recall**: a vector store queried from a tool or node
+
+The old `ConversationBufferMemory` / `ConversationSummaryMemory` classes live only in
+`langchain-classic`; don't use them with LangGraph agents.
 
 ### 4. Document Processing
 
@@ -105,11 +122,11 @@ LangSmith is the standard for observability:
 
 ## Quick Start
 
-### Modern ReAct Agent with LangGraph
+### Tool-Calling Agent with `create_agent`
 
 ```python
-from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.memory import MemorySaver
+from langchain.agents import create_agent
+from langgraph.checkpoint.memory import InMemorySaver
 from langchain_anthropic import ChatAnthropic
 from langchain_core.tools import tool
 import ast
@@ -165,13 +182,14 @@ def calculate(expression: str) -> str:
 tools = [search_database, calculate]
 
 # Create checkpointer for memory persistence
-checkpointer = MemorySaver()
+checkpointer = InMemorySaver()
 
-# Create ReAct agent
-agent = create_react_agent(
-    llm,
+# Create agent (a compiled LangGraph graph)
+agent = create_agent(
+    llm,  # or a string such as "anthropic:claude-sonnet-4-6"
     tools,
-    checkpointer=checkpointer
+    system_prompt="You are a helpful assistant.",
+    checkpointer=checkpointer,
 )
 
 # Run agent with thread ID for memory
@@ -285,8 +303,40 @@ tools = [
     )
 ]
 
-agent = create_react_agent(llm, tools)
+agent = create_agent(llm, tools)
 ```
+
+### Pattern 2b: Human Approval for Risky Tools
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+
+agent = create_agent(
+    llm,
+    tools,
+    middleware=[HumanInTheLoopMiddleware(interrupt_on={"send_email": True})],
+    checkpointer=InMemorySaver(),  # required: interrupts resume from a checkpoint
+)
+
+config = {"configurable": {"thread_id": "1"}}
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Email Alice the report"}]},
+    config,
+    version="v2",
+)
+# Paused: inspect result.interrupts, then resume with one decision per gated call
+agent.invoke(
+    Command(resume={"decisions": [{"type": "approve"}]}),  # or reject / edit / respond
+    config,
+    version="v2",
+)
+```
+
+In a hand-built `StateGraph`, call `interrupt(payload)` from `langgraph.types` inside a node
+and resume with `Command(resume=value)`.
 
 ### Pattern 3: Multi-Step Workflow with StateGraph
 
@@ -356,19 +406,17 @@ workflow = builder.compile()
 ### Pattern 4: Multi-Agent Orchestration
 
 ```python
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import HumanMessage
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langchain.agents import create_agent
 from typing import Literal
 
-class MultiAgentState(TypedDict):
-    messages: list
+class MultiAgentState(MessagesState):  # messages use the add_messages reducer
     next_agent: str
 
-# Create specialized agents
-researcher = create_react_agent(llm, research_tools)
-writer = create_react_agent(llm, writing_tools)
-reviewer = create_react_agent(llm, review_tools)
+# Create specialized agents (each is a compiled graph usable as a node)
+researcher = create_agent(llm, research_tools, name="researcher")
+writer = create_agent(llm, writing_tools, name="writer")
+reviewer = create_agent(llm, review_tools, name="reviewer")
 
 async def supervisor(state: MultiAgentState) -> MultiAgentState:
     """Route to appropriate agent based on task."""
@@ -421,14 +469,20 @@ multi_agent = builder.compile()
 ### Token-Based Memory with LangGraph
 
 ```python
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware
+from langgraph.checkpoint.memory import InMemorySaver
 
 # In-memory checkpointer (development)
-checkpointer = MemorySaver()
+checkpointer = InMemorySaver()
 
-# Create agent with persistent memory
-agent = create_react_agent(llm, tools, checkpointer=checkpointer)
+# Create agent with persistent memory; summarize once history grows
+agent = create_agent(
+    llm,
+    tools,
+    middleware=[SummarizationMiddleware(model=llm, trigger=("tokens", 4000))],
+    checkpointer=checkpointer,
+)
 
 # Each thread_id maintains separate conversation
 config = {"configurable": {"thread_id": "session-abc123"}}
@@ -444,12 +498,13 @@ result2 = await agent.ainvoke({"messages": [("user", "What's my name?")]}, confi
 ```python
 from langgraph.checkpoint.postgres import PostgresSaver
 
-# Production checkpointer
-checkpointer = PostgresSaver.from_conn_string(
-    "postgresql://user:pass@localhost/langgraph"
-)
-
-agent = create_react_agent(llm, tools, checkpointer=checkpointer)
+# Production checkpointer (pip install langgraph-checkpoint-postgres)
+# from_conn_string is a context manager; use AsyncPostgresSaver for async apps
+DB_URI = "postgresql://user:pass@localhost/langgraph"
+with PostgresSaver.from_conn_string(DB_URI) as checkpointer:
+    checkpointer.setup()  # create tables on first run
+    agent = create_agent(llm, tools, checkpointer=checkpointer)
+    agent.invoke({"messages": [("user", "hi")]}, {"configurable": {"thread_id": "1"}})
 ```
 
 ### Vector Store Memory for Long-Term Context
@@ -484,9 +539,9 @@ import os
 from langchain_anthropic import ChatAnthropic
 
 # Enable LangSmith tracing
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_API_KEY"] = "your-api-key"
-os.environ["LANGCHAIN_PROJECT"] = "my-project"
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = "your-api-key"
+os.environ["LANGSMITH_PROJECT"] = "my-project"
 
 # All LangChain/LangGraph operations are automatically traced
 llm = ChatAnthropic(model="claude-sonnet-4-6")

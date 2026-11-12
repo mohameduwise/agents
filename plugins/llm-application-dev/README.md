@@ -62,11 +62,19 @@ Build production-ready LLM applications, advanced RAG systems, and intelligent a
 
 ## Requirements
 
-- LangChain >= 1.2.0
-- LangGraph >= 0.3.0
+- LangChain >= 1.5.0
+- LangGraph >= 1.2.0
 - Python 3.11+
 
 ## Changelog
+
+### 2.1.0 (November 2026)
+
+- Replaced deprecated `langgraph.prebuilt.create_react_agent` with `langchain.agents.create_agent` (verified against langgraph 1.2.21 / langchain 1.5.0 source)
+- Replaced legacy `Conversation*Memory` guidance with checkpointers, `SummarizationMiddleware`, and LangGraph `Store`
+- Added `HumanInTheLoopMiddleware` approval pattern; fixed `PostgresSaver.from_conn_string` context-manager usage
+- `MemorySaver` → `InMemorySaver`; LangSmith env vars → `LANGSMITH_*`
+- Documented LangGraph's runtime positioning and Deep Agents as the recommended harness
 
 ### 2.0.0 (January 2026)
 
